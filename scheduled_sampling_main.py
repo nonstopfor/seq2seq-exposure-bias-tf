@@ -11,25 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """
-Attentional Seq2seq with RAML algorithm.
+Attentional Seq2seq using Scheduled sampling algorithm.
 
-Read a pre-processed file containing the augmented samples and
-corresponding rewards for every target sentence.
+This code is basically the same as baseline_seq2seq_attn_main.py,
+except using ScheduledEmbeddingTrainingHelper.
 
-RAML Algorithm is described in https://arxiv.org/pdf/1705.07136.pdf
-
+Scheduled Sampling Algorithm is described in https://arxiv.org/abs/1506.03099
 """
 
-from io import open
-import importlib
+# pylint: disable=invalid-name, too-many-arguments, too-many-locals
 import os
+from io import open
+import math
+import importlib
 import tensorflow as tf
 import texar.tf as tx
-import random
 from rouge import Rouge
-from raml_translation_with_score import TranslationWithScore
 import cotk
 import numpy as np
 
@@ -46,11 +44,9 @@ flags.DEFINE_string("config_model", "configs.config_model", "The model config.")
 flags.DEFINE_string("config_data", "configs.config_giga",
                     "The dataset config.")
 
-#flags.DEFINE_string('raml_file', 'data/giga/samples_giga.txt',
-#                    'the samples and rewards described in RAML')
-flags.DEFINE_integer('n_samples', 10,
-                     'number of samples for every target sentence')
-flags.DEFINE_float('tau', 0.4, 'the temperature in RAML algorithm')
+flags.DEFINE_float('decay_factor', 500.,
+                   'The hyperparameter controling the speed of increasing '
+                   'the probability of sampling from model')
 
 flags.DEFINE_string('output_dir', '.', 'where to keep training logs')
 flags.DEFINE_bool('cpu', False, 'whether to use cpu')
@@ -62,38 +58,30 @@ if FLAGS.cpu:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 else:
     os.environ['CUDA_VISIBLE_DEVICES'] = FLAGS.gpu
-FLAGS = flags.FLAGS
-
 config_model = importlib.import_module(FLAGS.config_model)
 config_data = importlib.import_module(FLAGS.config_data)
 debug = FLAGS.debug
 dataset = FLAGS.config_data.split('.')[-1].split('_')[-1]
 print(f"dataset={dataset}")
-
 if not FLAGS.output_dir.endswith('/'):
     FLAGS.output_dir += '/'
-log_dir = FLAGS.output_dir + 'training_log_raml' + \
-          '_' + str(FLAGS.n_samples) + 'samples' + \
-          '_tau' + str(FLAGS.tau) + '/' + dataset + '/'
+log_dir = FLAGS.output_dir + 'training_log_scheduled_sampling' + \
+          '_decayf' + str(FLAGS.decay_factor) + '/' + dataset + '/'
 tx.utils.maybe_create_dir(log_dir)
-checkpoint_dir = './checkpoints/' + 'raml/' + dataset + '/'
+checkpoint_dir = './checkpoints/' + 'scheduled_sampling/' + dataset + '/'
 tx.utils.maybe_create_dir(checkpoint_dir)
 
-def raml_loss(batch, output, training_rewards):
-    mle_loss = tx.losses.sequence_sparse_softmax_cross_entropy(
-        labels=batch['target_text_ids'][:, 1:],
-        logits=output.logits,
-        sequence_length=batch['target_length'] - 1,
-        average_across_batch=False)
-    return tf.reduce_sum(mle_loss * training_rewards) / \
-           tf.reduce_sum(training_rewards)
+
+def inverse_sigmoid(i):
+    return FLAGS.decay_factor / (
+            FLAGS.decay_factor + math.exp(i / FLAGS.decay_factor))
 
 
-def build_model(batch, loader, rewards):
+def build_model(batch, loader, self_sampling_proba):
     """
     Assembles the seq2seq model.
-    Code in this function is basically the same of build_model() in
-    baseline_seq2seq_attn_main.py except the normalization in loss_fn.
+    It is the same as build_model() in baseline_seq2seq_attn.py except
+    using ScheduledEmbeddingTrainingHelper.
     """
     source_embedder = tx.modules.WordEmbedder(
         vocab_size=loader.vocab_size, hparams=config_model.embedder)
@@ -112,13 +100,22 @@ def build_model(batch, loader, rewards):
         vocab_size=loader.vocab_size,
         hparams=config_model.decoder)
 
-    training_outputs, _, _ = decoder(
-        decoding_strategy='train_greedy',
+    helper = tx.modules.get_helper(
+        helper_type='ScheduledEmbeddingTrainingHelper',
         inputs=target_embedder(batch['target_text_ids'][:, :-1]),
-        sequence_length=batch['target_length'] - 1)
+        sequence_length=batch['target_length'] - 1,
+        embedding=target_embedder,
+        sampling_probability=self_sampling_proba)
+
+    training_outputs, _, _ = decoder(
+        helper=helper, initial_state=decoder.zero_state(
+            batch_size=tf.shape(batch['target_length'])[0], dtype=tf.float32))
 
     train_op = tx.core.get_train_op(
-        raml_loss(batch, training_outputs, rewards),
+        tx.losses.sequence_sparse_softmax_cross_entropy(
+            labels=batch['target_text_ids'][:, 1:],
+            logits=training_outputs.logits,
+            sequence_length=batch['target_length'] - 1),
         hparams=config_model.opt)
 
     start_tokens = tf.ones_like(batch['target_length']) * \
@@ -143,27 +140,22 @@ def print_stdout_and_file(content, file):
 def main():
     """Entrypoint.
     """
-    config_data.train['batch_size'] *= FLAGS.n_samples
-    config_data.val['batch_size'] *= FLAGS.n_samples
-    config_data.test['batch_size'] *= FLAGS.n_samples
-
+    max_sent_length = 50
+    loader = cotk.dataloader.SingleTurnDialog(f'./data/{dataset}', 10, max_sent_length, 0, 'nltk', False)
+    batch_size = config_data.batch_size
     train_data = tx.data.PairedTextData(hparams=config_data.train)
     val_data = tx.data.PairedTextData(hparams=config_data.val)
     test_data = tx.data.PairedTextData(hparams=config_data.test)
     data_iterator = tx.data.TrainTestDataIterator(
         train=train_data, val=val_data, test=test_data)
-    batch_size = config_data.train['batch_size']
+
     batch = data_iterator.get_next()
-    rewards_ts = tf.placeholder(
-        dtype=tf.float32, shape=[None, ], name='training_rewards')
 
-    max_sent_length = 50
-    loader = TranslationWithScore(f'./data/{dataset}_raml', 10, max_sent_length, 0, 'nltk', False)
-    train_op, infer_outputs = build_model(batch, loader, rewards_ts)
+    self_sampling_proba = tf.placeholder(shape=[], dtype=tf.float32)
+    train_op, infer_outputs = \
+        build_model(batch, loader, self_sampling_proba)
 
-    # raml_train_data = read_raml_sample_file()
-
-    def _train_epoch(sess, epoch_no):
+    def _train_epoch(sess, epoch_no, total_step_counter):
         data_iterator.switch_to_train_data(sess)
         training_log_file = \
             open(log_dir + 'training_log' + str(epoch_no) + '.txt', 'w',
@@ -173,23 +165,26 @@ def main():
         loader.restart("train", batch_size=batch_size, shuffle=True)
         batched_data = loader.get_next_batch("train")
         while batched_data is not None:
-            feed_dict = {
+            sampling_proba_ = 1. - inverse_sigmoid(total_step_counter)
+            loss = sess.run(train_op, feed_dict={
+                self_sampling_proba: sampling_proba_,
                 batch['source_text_ids']: batched_data['post'],
                 batch['source_length']: batched_data['post_length'],
                 batch['target_text_ids']: batched_data['resp'],
-                batch['target_length']: batched_data['resp_length'],
-                rewards_ts: batched_data['score']
-            }
-            loss = sess.run(train_op, feed_dict=feed_dict)
-            print("step={}, loss={:.4f}".format(step, loss),
-                  file=training_log_file)
+                batch['target_length']: batched_data['resp_length']
+            })
+            print("step={}, loss={:.4f}, self_proba={}".format(
+                step, loss, sampling_proba_), file=training_log_file)
             if step % config_data.observe_steps == 0:
-                print("step={}, loss={:.4f}".format(step, loss))
+                print("step={}, loss={:.4f}, self_proba={}".format(
+                    step, loss, sampling_proba_))
             training_log_file.flush()
             step += 1
+            total_step_counter += 1
+            batched_data = loader.get_next_batch("train")
             if debug:
                 break
-            batched_data = loader.get_next_batch("train")
+
 
     # code below this line is exactly the same as baseline_seq2seq_attn_main.py
 
@@ -262,10 +257,13 @@ def main():
         saver = tf.train.Saver()
         if tf.train.latest_checkpoint(checkpoint_dir) is not None:
             saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
+
         best_val_score = -1.
+        total_step_counter = 1
+
         scores_file = open(log_dir + 'scores.txt', 'w', encoding='utf-8')
         for i in range(config_data.num_epochs):
-            _train_epoch(sess, i)
+            _train_epoch(sess, i, total_step_counter)
 
             val_score = _eval_epoch(sess, 'dev', i)
             test_score = _eval_epoch(sess, 'test', i)
