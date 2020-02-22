@@ -30,6 +30,7 @@ import texar.tf as tx
 from rouge import Rouge
 import cotk
 import numpy as np
+import json
 
 
 def set_seed(seed=1):
@@ -40,44 +41,13 @@ def set_seed(seed=1):
 set_seed()
 flags = tf.flags
 
-flags.DEFINE_string("config_model", "configs.config_model", "The model config.")
-flags.DEFINE_string("config_data", "configs.config_giga",
-                    "The dataset config.")
 
-flags.DEFINE_float('decay_factor', 500.,
-                   'The hyperparameter controling the speed of increasing '
-                   'the probability of sampling from model')
-
-flags.DEFINE_string('output_dir', '.', 'where to keep training logs')
-flags.DEFINE_bool('cpu', False, 'whether to use cpu')
-flags.DEFINE_string('gpu', '0', 'use which gpu(s)')
-flags.DEFINE_bool('debug', False, 'if debug, skip the training process after one step')
-
-FLAGS = flags.FLAGS
-if FLAGS.cpu:
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-else:
-    os.environ['CUDA_VISIBLE_DEVICES'] = FLAGS.gpu
-config_model = importlib.import_module(FLAGS.config_model)
-config_data = importlib.import_module(FLAGS.config_data)
-debug = FLAGS.debug
-dataset = FLAGS.config_data.split('.')[-1].split('_')[-1]
-print(f"dataset={dataset}")
-if not FLAGS.output_dir.endswith('/'):
-    FLAGS.output_dir += '/'
-log_dir = FLAGS.output_dir + 'training_log_scheduled_sampling' + \
-          '_decayf' + str(FLAGS.decay_factor) + '/' + dataset + '/'
-tx.utils.maybe_create_dir(log_dir)
-checkpoint_dir = './checkpoints/' + 'scheduled_sampling/' + dataset + '/'
-tx.utils.maybe_create_dir(checkpoint_dir)
-
-
-def inverse_sigmoid(i):
+def inverse_sigmoid(i, FLAGS):
     return FLAGS.decay_factor / (
             FLAGS.decay_factor + math.exp(i / FLAGS.decay_factor))
 
 
-def build_model(batch, loader, self_sampling_proba):
+def build_model(batch, loader, self_sampling_proba, config_model):
     """
     Assembles the seq2seq model.
     It is the same as build_model() in baseline_seq2seq_attn.py except
@@ -137,9 +107,47 @@ def print_stdout_and_file(content, file):
     print(content, file=file)
 
 
-def main():
+def main(FLAGS=None):
     """Entrypoint.
     """
+
+    if FLAGS is None:
+        flags.DEFINE_string("config_model", "configs.config_model", "The model config.")
+        flags.DEFINE_string("config_data", "configs.config_giga",
+                            "The dataset config.")
+
+        flags.DEFINE_float('decay_factor', 500.,
+                           'The hyperparameter controling the speed of increasing '
+                           'the probability of sampling from model')
+
+        flags.DEFINE_string('output_dir', '.', 'where to keep training logs')
+        flags.DEFINE_bool('cpu', False, 'whether to use cpu')
+        flags.DEFINE_string('gpu', '0', 'use which gpu(s)')
+        flags.DEFINE_bool('debug', False, 'if debug, skip the training process after one step')
+        flags.DEFINE_bool('load', False, 'Whether to load existing checkpoint')
+        flags.DEFINE_bool('infer', False, 'infer (use pretrained model)')
+
+        FLAGS = flags.FLAGS
+
+    if FLAGS.cpu:
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = FLAGS.gpu
+    config_model = importlib.import_module(FLAGS.config_model)
+    config_data = importlib.import_module(FLAGS.config_data)
+    debug = FLAGS.debug
+    load = FLAGS.load
+    infer = FLAGS.infer
+    dataset = FLAGS.config_data.split('.')[-1].split('_')[-1]
+    print(f"dataset={dataset}")
+    if not FLAGS.output_dir.endswith('/'):
+        FLAGS.output_dir += '/'
+    log_dir = FLAGS.output_dir + 'training_log_scheduled_sampling' + \
+              '_decayf' + str(FLAGS.decay_factor) + '/' + dataset + '/'
+    tx.utils.maybe_create_dir(log_dir)
+    checkpoint_dir = './checkpoints/' + 'scheduled_sampling/' + dataset + '/'
+    tx.utils.maybe_create_dir(checkpoint_dir)
+
     max_sent_length = 50
     loader = cotk.dataloader.SingleTurnDialog(f'./data/{dataset}', 10, max_sent_length, 0, 'nltk', False)
     batch_size = config_data.batch_size
@@ -153,7 +161,7 @@ def main():
 
     self_sampling_proba = tf.placeholder(shape=[], dtype=tf.float32)
     train_op, infer_outputs = \
-        build_model(batch, loader, self_sampling_proba)
+        build_model(batch, loader, self_sampling_proba, config_model)
 
     def _train_epoch(sess, epoch_no, total_step_counter):
         data_iterator.switch_to_train_data(sess)
@@ -165,7 +173,7 @@ def main():
         loader.restart("train", batch_size=batch_size, shuffle=True)
         batched_data = loader.get_next_batch("train")
         while batched_data is not None:
-            sampling_proba_ = 1. - inverse_sigmoid(total_step_counter)
+            sampling_proba_ = 1. - inverse_sigmoid(total_step_counter, FLAGS)
             loss = sess.run(train_op, feed_dict={
                 self_sampling_proba: sampling_proba_,
                 batch['source_text_ids']: batched_data['post'],
@@ -184,7 +192,6 @@ def main():
             batched_data = loader.get_next_batch("train")
             if debug:
                 break
-
 
     # code below this line is exactly the same as baseline_seq2seq_attn_main.py
 
@@ -236,7 +243,8 @@ def main():
             BleuMetric = cotk.metric.BleuCorpusMetric(loader)
             data = {'ref_allvocabs': refs_id, 'gen': hypos_id}
             BleuMetric.forward(data)
-            return BleuMetric.close()['bleu']
+            result = BleuMetric.close()
+            return result['bleu'], result
         elif config_data.eval_metric == 'rouge':
             rouge = Rouge()
             return rouge.get_scores(hyps=hypos, refs=refs, avg=True)
@@ -254,50 +262,58 @@ def main():
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         sess.run(tf.tables_initializer())
-        saver = tf.train.Saver()
-        if tf.train.latest_checkpoint(checkpoint_dir) is not None:
+        saver = tf.train.Saver(max_to_keep=1)
+        if load and tf.train.latest_checkpoint(checkpoint_dir) is not None:
             saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
 
         best_val_score = -1.
         total_step_counter = 1
 
         scores_file = open(log_dir + 'scores.txt', 'w', encoding='utf-8')
-        for i in range(config_data.num_epochs):
-            _train_epoch(sess, i, total_step_counter)
+        if not infer:
+            for i in range(config_data.num_epochs):
+                _train_epoch(sess, i, total_step_counter)
 
-            val_score = _eval_epoch(sess, 'dev', i)
-            test_score = _eval_epoch(sess, 'test', i)
+                val_score, _ = _eval_epoch(sess, 'dev', i)
+                test_score, result = _eval_epoch(sess, 'test', i)
 
-            best_val_score = max(best_val_score, _calc_reward(val_score))
-            if best_val_score == _calc_reward(val_score):
-                saver.save(sess, checkpoint_dir, global_step=i + 1)
-            if config_data.eval_metric == 'bleu':
-                print_stdout_and_file(
-                    'val epoch={}, BLEU={:.4f}; best-ever={:.4f}'.format(
-                        i, val_score, best_val_score), file=scores_file)
-
-                print_stdout_and_file(
-                    'test epoch={}, BLEU={:.4f}'.format(i, test_score),
-                    file=scores_file)
-                print_stdout_and_file('=' * 50, file=scores_file)
-
-            elif config_data.eval_metric == 'rouge':
-                print_stdout_and_file(
-                    'valid epoch {}:'.format(i), file=scores_file)
-                for key, value in val_score.items():
+                best_val_score = max(best_val_score, _calc_reward(val_score))
+                if best_val_score == _calc_reward(val_score):
+                    saver.save(sess, checkpoint_dir, global_step=i + 1)
+                    with open(checkpoint_dir + 'result.json', 'w', encoding='utf-8') as file:
+                        json.dump(result, file)
+                if config_data.eval_metric == 'bleu':
                     print_stdout_and_file(
-                        '{}: {}'.format(key, value), file=scores_file)
-                print_stdout_and_file('fsum: {}; best_val_fsum: {}'.format(
-                    _calc_reward(val_score), best_val_score), file=scores_file)
+                        'val epoch={}, BLEU={:.4f}; best-ever={:.4f}'.format(
+                            i, val_score, best_val_score), file=scores_file)
 
-                print_stdout_and_file(
-                    'test epoch {}:'.format(i), file=scores_file)
-                for key, value in test_score.items():
                     print_stdout_and_file(
-                        '{}: {}'.format(key, value), file=scores_file)
-                print_stdout_and_file('=' * 110, file=scores_file)
+                        'test epoch={}, BLEU={:.4f}'.format(i, test_score),
+                        file=scores_file)
+                    print_stdout_and_file('=' * 50, file=scores_file)
 
-            scores_file.flush()
+                elif config_data.eval_metric == 'rouge':
+                    print_stdout_and_file(
+                        'valid epoch {}:'.format(i), file=scores_file)
+                    for key, value in val_score.items():
+                        print_stdout_and_file(
+                            '{}: {}'.format(key, value), file=scores_file)
+                    print_stdout_and_file('fsum: {}; best_val_fsum: {}'.format(
+                        _calc_reward(val_score), best_val_score), file=scores_file)
+
+                    print_stdout_and_file(
+                        'test epoch {}:'.format(i), file=scores_file)
+                    for key, value in test_score.items():
+                        print_stdout_and_file(
+                            '{}: {}'.format(key, value), file=scores_file)
+                    print_stdout_and_file('=' * 110, file=scores_file)
+
+                scores_file.flush()
+        else:
+            val_score, _ = _eval_epoch(sess, 'dev', 0)
+            test_score, result = _eval_epoch(sess, 'test', 0)
+            with open(log_dir + 'result.json', 'w', encoding='utf-8') as file:
+                json.dump(result, file)
 
 
 if __name__ == '__main__':

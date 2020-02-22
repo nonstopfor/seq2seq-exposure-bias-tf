@@ -132,6 +132,40 @@ Here:
 
   * `--decay_factor` specifies the hyperparameter controling the speed of increasing the probability of sampling from model.
 
+#### Using run.py
+
+Besides the above commands to train the models, you could also use run.py to train each model. Here is the usage.
+
+- For Baseline Attentional Seq2seq
+
+	```
+	python run.py --script seq2seq_main
+	```
+	
+	Other parameters are the same as the example in [Baseline Attentional Seq2seq](#Baseline Attentional Seq2seq)
+	
+- For Reward Augmented Maximum Likelihood (RAML)
+
+  ```
+  python run.py --script raml_main
+  ```
+
+  Other parameters are the same as the example in [Reward Augmented Maximum Likelihood (RAML)](#Reward Augmented Maximum Likelihood (RAML))
+
+- For Scheduled Sampling
+
+  ```
+  python run.py --script scheduled_sampling_main
+  ```
+
+  Other parameters are the same as the example in [Scheduled Sampling](#Scheduled Sampling)
+
+
+
+## Load checkpoints
+
+For all models, if you add "--load True" when running the code, the checkpoint will be loaded. By default, the checkpoint won't be loaded.
+
 ## Results ##
 
 ### Machine Translation
@@ -139,13 +173,19 @@ Here:
 | -----------| -------| -----------|
 | MLE   | 0.3016     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
 | Scheduled Sampling | 0.3045     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
-| RAML | 0.3017     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001,batch_size=8，epoch=10 |
+| RAML | 0.3015    | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001,batch_size=8，epoch=10 |
 
 ### Text Summarization
 | Model      | BLEU Score | Hyperparameters |
 | -----------|-------| -----------|
-| MLE        | 0.1221 | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
+| MLE        | 0.1236 | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
 | Scheduled Sampling   | 0.1231     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
 | RAML | 0.1256 | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001,batch_size=8，epoch=10 |
 
- 
+ ## Acknowledgement
+
+This repository is adapted from texar. 
+
+### License
+
+[Apache License 2.0](LICENSE)
