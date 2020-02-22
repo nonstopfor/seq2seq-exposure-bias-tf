@@ -171,7 +171,7 @@ For all models, if you add "--load True" when running the code, the checkpoint w
 ### Machine Translation
 | Model      | BLEU Score   | Hyperparameters |
 | -----------| -------| -----------|
-| MLE   | 0.3016     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
+| MLE   | 0.3021   | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
 | Scheduled Sampling | 0.3045     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
 | RAML | 0.3015    | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001,batch_size=8，epoch=10 |
 
@@ -179,7 +179,7 @@ For all models, if you add "--load True" when running the code, the checkpoint w
 | Model      | BLEU Score | Hyperparameters |
 | -----------|-------| -----------|
 | MLE        | 0.1236 | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
-| Scheduled Sampling   | 0.1231     | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
+| Scheduled Sampling   | 0.1234    | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001, batch_size=64,epoch=10 |
 | RAML | 0.1256 | num_units=256, beam_width=5, decoder_layers=1, dropout=0.2, learning_rate=0.001,batch_size=8，epoch=10 |
 
  ## Acknowledgement

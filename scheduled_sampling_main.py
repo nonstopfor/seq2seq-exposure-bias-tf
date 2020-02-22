@@ -21,6 +21,7 @@ Scheduled Sampling Algorithm is described in https://arxiv.org/abs/1506.03099
 """
 
 # pylint: disable=invalid-name, too-many-arguments, too-many-locals
+# NOTICE: complying with the Apache License, this file has been modified
 import os
 from io import open
 import math

@@ -17,7 +17,7 @@ same as examples/seq2seq_attn except that here Rouge is also supported.
 """
 
 # pylint: disable=invalid-name, too-many-arguments, too-many-locals
-
+# NOTICE: complying with the Apache License, this file has been modified    
 from io import open
 import importlib
 import tensorflow as tf

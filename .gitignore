@@ -3,7 +3,8 @@ data/*.zip
 data/*/*
 !data/*/*.py
 
-training_log*
+training_log*/*/*
+!training_log*/*/result.json
 __pycache__
 checkpoints
 scores*

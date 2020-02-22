@@ -21,6 +21,7 @@ corresponding rewards for every target sentence.
 RAML Algorithm is described in https://arxiv.org/pdf/1705.07136.pdf
 
 """
+# NOTICE: complying with the Apache License, this file has been modified
 
 from io import open
 import importlib
