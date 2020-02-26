@@ -154,7 +154,7 @@ Besides the above commands to train the models, you could also use run.py to tra
   python run.py --script raml_main
   ```
 
-  Other parameters are the same as the example in [Reward Augmented Maximum Likelihood (RAML)](#Reward Augmented Maximum Likelihood (RAML))
+  Other parameters are the same as the example in [Reward Augmented Maximum Likelihood (RAML)](#reward-augmented-maximum-likelihood (raml))
 
 - For Scheduled Sampling
 
@@ -162,7 +162,7 @@ Besides the above commands to train the models, you could also use run.py to tra
   python run.py --script scheduled_sampling_main
   ```
 
-  Other parameters are the same as the example in [Scheduled Sampling](#Scheduled Sampling)
+  Other parameters are the same as the example in [Scheduled Sampling](#scheduled-sampling)
 
 
 
