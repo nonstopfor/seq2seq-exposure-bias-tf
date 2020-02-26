@@ -8,6 +8,10 @@ This example provide implementations of some classic and advanced training algor
 * **Reward Augmented Maximum Likelihood (RAML)**: Described in [(Norouzi et al., 2016)](https://arxiv.org/pdf/1609.00150.pdf) and we use the sampling approach (n-gram replacement) by [(Ma et al., 2017)](https://arxiv.org/abs/1705.07136).
 * **Scheduled Sampling**: Described in [(Bengio et al., 2015)](https://arxiv.org/abs/1506.03099)
 
+## Motivation
+
+This repository is adapted from [texar](https://github.com/asyml/texar/tree/master/examples/seq2seq_exposure_bias). The main motivation is to use [cotk](https://github.com/thu-coai/cotk) for data loading and model evaluation, which is more convenient. Thus the model implementation is the same as [texar](https://github.com/asyml/texar/tree/master/examples/seq2seq_exposure_bias), but the data loading and model evaluation parts use [cotk](https://github.com/thu-coai/cotk).
+
 ## Usage ##
 
 ### Dataset ###
@@ -165,6 +169,16 @@ Besides the above commands to train the models, you could also use run.py to tra
 ## Load checkpoints
 
 For all models, if you add "--load True" when running the code, the checkpoint will be loaded. By default, the checkpoint won't be loaded.
+
+For Baseline Attentional Seq2seq, the checkpoint dir is "checkpoints/seq2seq_base/{dataset_name}/".
+
+For Reward Augmented Maximum Likelihood (RAML), the checkpoint dir is "checkpoints/raml/{dataset_name}/".
+
+For Scheduled Sampling, the checkpoint dir is "checkpoints/scheduled_sampling/{dataset_name}/".
+
+**Here the {dataset_name} = giga or iwslt14** . And the dataset_name will be automatically inferred from the  
+
+"config_data" value.
 
 ## Results ##
 
