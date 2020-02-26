@@ -176,6 +176,8 @@ For Reward Augmented Maximum Likelihood (RAML), the checkpoint dir is "checkpoin
 
 For Scheduled Sampling, the checkpoint dir is "checkpoints/scheduled_sampling/{dataset_name}/".
 
+To load pretrained models, just place them in the corresponding directories. 
+
 **Here the {dataset_name} = giga or iwslt14** . And the dataset_name will be automatically inferred from the  
 
 "config_data" value.
