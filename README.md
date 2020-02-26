@@ -146,7 +146,7 @@ Besides the above commands to train the models, you could also use run.py to tra
 	python run.py --script seq2seq_main
 	```
 	
-	Other parameters are the same as the example in [Baseline Attentional Seq2seq](#Baseline Attentional Seq2seq)
+	Other parameters are the same as the example in [Baseline Attentional Seq2seq](#baseline-attentional-seq2seq)
 	
 - For Reward Augmented Maximum Likelihood (RAML)
 
